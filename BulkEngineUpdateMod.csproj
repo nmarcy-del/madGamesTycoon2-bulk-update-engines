@@ -75,6 +75,7 @@
     <Compile Include="BulkEngineUpdateMod.cs" />
     <Compile Include="Config\Config.cs" />
     <Compile Include="Patches\RoomButtonScriptPatch.cs" />
+    <Compile Include="Patches\TaskEngineCompletePatch.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

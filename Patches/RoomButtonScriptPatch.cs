@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Linq;
+using System.Collections.Generic;
 
 namespace BulkEngineUpdateMod.Patches
 {
@@ -9,6 +10,9 @@ namespace BulkEngineUpdateMod.Patches
     [HarmonyPatch("BUTTON_Dev_Engines")]
     public class ButtonDevEnginesPatch
     {
+        private static bool _isMenuAdjusted = false;
+        private static Queue<engineScript> engineUpdateQueue = new Queue<engineScript>();
+
         static void Postfix(roomButtonScript __instance)
         {
             Debug.Log("Patch: BUTTON_Dev_Engines executed !");
@@ -21,7 +25,10 @@ namespace BulkEngineUpdateMod.Patches
             {
                 Debug.Log("Menu found: Menu_Dev_EngineMain");
                 AdjustMenuHeight(menu);
-                AddCustomButton(menu, guiMain, rS);
+                if (_isMenuAdjusted)
+                {
+                    AddCustomButton(menu, guiMain, rS);
+                }
             }
             else
             {
@@ -31,6 +38,13 @@ namespace BulkEngineUpdateMod.Patches
 
         private static void AdjustMenuHeight(GameObject menue)
         {
+
+            if (_isMenuAdjusted)
+            {
+                Debug.Log("Menu height adjustment skipped.");
+                return;
+            }
+
             Transform menuTransform = menue.transform.Find("Menue");
             RectTransform menuRect = menuTransform.GetComponent<RectTransform>();
             if (menuRect != null)
@@ -38,6 +52,8 @@ namespace BulkEngineUpdateMod.Patches
                 menuRect.sizeDelta = new Vector2(menuRect.sizeDelta.x, menuRect.sizeDelta.y + 35);
                 Debug.Log("Increased menu height.");
             }
+
+            _isMenuAdjusted = true;
         }
 
         private static void AddCustomButton(GameObject menu, GUI_Main guiMain, roomScript rS)
@@ -60,9 +76,11 @@ namespace BulkEngineUpdateMod.Patches
             clonedButton.name = "Button_CustomAction";
 
             RectTransform rectTransform = clonedButton.GetComponent<RectTransform>();
+
             if (rectTransform != null)
             {
-                rectTransform.anchoredPosition = new Vector2(rectTransform.anchoredPosition.x, rectTransform.anchoredPosition.y - 63);
+                rectTransform.anchoredPosition = new Vector2(rectTransform.anchoredPosition.x,
+                    rectTransform.anchoredPosition.y - 63);
                 Debug.Log("Clone button position adjusted.");
             }
 
@@ -110,24 +128,65 @@ namespace BulkEngineUpdateMod.Patches
                 return;
             }
 
-            foreach (var engine in playerEngines)
-            {
-                if (engine.features.SequenceEqual(engineFeaturesInstance.engineFeatures_UNLOCK))
+            var enginesToUpdate = new List<engineScript>();
+
+            foreach (var engine in playerEngines) {
+                // Vérification des fonctionnalités déjà débloquées
+                if (engine.features.Zip(engineFeaturesInstance.engineFeatures_UNLOCK, (engineFeature, unlockFeature) => engineFeature == unlockFeature).All(x => x))
                 {
                     Debug.Log($"Engine '{engine.myName}' already has all features unlocked. Skipping.");
                     continue;
                 }
 
+                // Valider les informations du moteur
+                if (engine.features == null || engine.featuresInDev == null)
+                {
+                    Debug.LogError($"Engine '{engine.myName}' has invalid feature data. Skipping.");
+                    continue;
+                }
+
                 AssignNewFeatures(engine, engineFeaturesInstance);
+                SetNewVersionName(engine);
                 ConfigureDevelopmentPoints(engine, engineFeaturesInstance);
-                StartUpdateTask(engine, guiMain, rS);
+                checkEngineInformations(engine);
+
+                enginesToUpdate.Add(engine);
+
+                Debug.Log($"Prepared engine '{engine.myName}' for update.");
             }
 
+            if (enginesToUpdate.Count == 0)
+            {
+                Debug.LogWarning("No engines to update!");
+                guiMain.MessageBox("No engines available for update.", false);
+                return;
+            }
+
+            TaskEngineCompletePatch.AddEnginesToQueue(enginesToUpdate);
+            TaskEngineCompletePatch.StartNextUpdateTask(guiMain, rS);
             guiMain.MessageBox("All engine updates have been successfully queued!", false);
         }
 
+        private static void checkEngineInformations(engineScript engine)
+        {
+            Debug.LogWarning($"{engine.ownerID}");
+            Debug.LogWarning($"{engine.features}");
+            Debug.LogWarning($"{engine.featuresInDev}");
+            Debug.LogWarning($"{engine.spezialgenre}");
+            Debug.LogWarning($"{engine.spezialplatform}");
+            Debug.LogWarning($"{engine.updating}");
+        }
+        
         private static void AssignNewFeatures(engineScript engine, engineFeatures eF)
         {
+            if (engine.features.Length != eF.engineFeatures_UNLOCK.Length ||
+                engine.featuresInDev.Length != eF.engineFeatures_UNLOCK.Length)
+            {
+                Debug.LogError(
+                    $"Mismatch in feature arrays size for engine '{engine.myName}'. Engine features: {engine.features.Length}, Unlock features: {eF.engineFeatures_UNLOCK.Length}");
+                return;
+            }
+
             for (int i = 0; i < eF.engineFeatures_UNLOCK.Length; i++)
             {
                 if (eF.engineFeatures_UNLOCK[i])
@@ -140,15 +199,52 @@ namespace BulkEngineUpdateMod.Patches
             Debug.Log($"Assigned new features to engine '{engine.myName}'.");
         }
 
+        private static void SetNewVersionName(engineScript engine)
+        {
+            if (string.IsNullOrEmpty(engine.myName))
+            {
+                Debug.LogError("Engine name is null or empty. Skipping version update.");
+                return;
+            }
+
+            string baseName = engine.myName.Split(' ')[0]; // Conserver la base du nom
+            string newVersion = engine.GetVersionString();
+
+            if (string.IsNullOrEmpty(newVersion))
+            {
+                Debug.LogError($"Failed to retrieve version for engine '{engine.myName}'. Skipping name update.");
+                return;
+            }
+
+            engine.myName = $"{baseName} {newVersion}";
+
+            Debug.Log($"Updated engine name to: {engine.myName}");
+        }
+
+
         private static void ConfigureDevelopmentPoints(engineScript engine, engineFeatures eF)
         {
+            if (engine.featuresInDev.Length != eF.engineFeatures_UNLOCK.Length)
+            {
+                Debug.LogError(
+                    $"Mismatch in feature arrays size for engine '{engine.myName}'. Cannot configure development points.");
+                return;
+            }
+
             engine.devPoints = 0;
 
             for (int i = 0; i < engine.featuresInDev.Length; i++)
             {
                 if (engine.featuresInDev[i])
                 {
-                    engine.devPoints += eF.GetDevPointsForEngine(i);
+                    float devPoints = eF.GetDevPointsForEngine(i);
+                    if (devPoints <= 0)
+                    {
+                        Debug.LogWarning($"Feature index {i} has invalid devPoints: {devPoints}. Skipping.");
+                        continue;
+                    }
+
+                    engine.devPoints += devPoints;
                 }
             }
 
@@ -156,17 +252,6 @@ namespace BulkEngineUpdateMod.Patches
             engine.updating = true;
 
             Debug.Log($"Configured development points for engine '{engine.myName}'. Total points: {engine.devPoints}.");
-        }
-
-        private static void StartUpdateTask(engineScript engine, GUI_Main guiMain, roomScript rS)
-        {
-            taskEngine task = guiMain.AddTask_Engine();
-            task.Init(false);
-            task.engineID = engine.myID;
-
-            rS.taskID = task.myID;
-
-            Debug.Log($"Started update task for engine '{engine.myName}'. Task ID: {task.myID}.");
         }
     }
 }
