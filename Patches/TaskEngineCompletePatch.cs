@@ -117,7 +117,9 @@ namespace BulkEngineUpdateMod.Patches
             taskEngine task = guiMain.AddTask_Engine();
             task.engineID = nextEngine.myID;
             task.Init(false);
-
+            
+            Debug.Log($"Engine price : {nextEngine.preis}" );
+            Debug.Log($"Engine price : {nextEngine.gewinnbeteiligung}" );
             // Associez la tâche à la salle
             if (rS != null)
             {
@@ -130,17 +132,6 @@ namespace BulkEngineUpdateMod.Patches
             }
 
             Debug.Log($"Started update task for engine '{nextEngine.myName}'. Task ID: {task.myID}. Task name: {task.name}");
-        }
-        
-        private static void checkEngineInformations(engineScript engine)
-        {
-            Debug.Log("Checking updated engine informations :");
-            Debug.LogWarning($"{engine.ownerID}");
-            Debug.LogWarning($"{engine.features}");
-            Debug.LogWarning($"{engine.featuresInDev}");
-            Debug.LogWarning($"{engine.spezialgenre}");
-            Debug.LogWarning($"{engine.spezialplatform}");
-            Debug.LogWarning($"{engine.updating}");
         }
         
         private static roomScript FindRoomByTaskID(mainScript mS, int taskID)

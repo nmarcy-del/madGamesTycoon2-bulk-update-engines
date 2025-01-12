@@ -4,6 +4,8 @@ using UnityEngine.UI;
 using System.Linq;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using BepInEx.Configuration;
+using BulkEngineUpdateMod.Config;
 
 namespace BulkEngineUpdateMod.Patches
 {
@@ -12,7 +14,8 @@ namespace BulkEngineUpdateMod.Patches
     public class ButtonDevEnginesPatch
     {
         private static bool _isMenuAdjusted = false;
-        private static Queue<engineScript> engineUpdateQueue = new Queue<engineScript>();
+        private static int _enginePrice;
+        private static int _engineProfitShare;
 
         static void Postfix(roomButtonScript __instance)
         {
@@ -22,6 +25,8 @@ namespace BulkEngineUpdateMod.Patches
             roomScript rS = AccessTools.FieldRefAccess<roomButtonScript, roomScript>(__instance, "rS_");
             GameObject menu = guiMain.uiObjects[36];
 
+            ValidateAndSetConfig();
+            
             if (menu != null)
             {
                 Debug.Log("Menu found: Menu_Dev_EngineMain");
@@ -132,14 +137,13 @@ namespace BulkEngineUpdateMod.Patches
             var enginesToUpdate = new List<engineScript>();
 
             foreach (var engine in playerEngines) {
-                // Vérification des fonctionnalités déjà débloquées
+                
                 if (engine.features.Zip(engineFeaturesInstance.engineFeatures_UNLOCK, (engineFeature, unlockFeature) => engineFeature == unlockFeature).All(x => x))
                 {
                     Debug.Log($"Engine '{engine.myName}' already has all features unlocked. Skipping.");
                     continue;
                 }
-
-                // Valider les informations du moteur
+                
                 if (engine.features == null || engine.featuresInDev == null)
                 {
                     Debug.LogError($"Engine '{engine.myName}' has invalid feature data. Skipping.");
@@ -149,8 +153,20 @@ namespace BulkEngineUpdateMod.Patches
                 AssignNewFeatures(engine, engineFeaturesInstance);
                 SetNewVersionName(engine);
                 ConfigureDevelopmentPoints(engine, engineFeaturesInstance);
-                checkEngineInformations(engine);
 
+                if (engine.sellEngine)
+                {
+                    if (_enginePrice > 0)
+                    {
+                        engine.preis = _enginePrice;
+                    }
+
+                    if (_engineProfitShare > 0)
+                    {
+                        engine.gewinnbeteiligung = _engineProfitShare;
+                    }
+                }
+                
                 enginesToUpdate.Add(engine);
 
                 Debug.Log($"Prepared engine '{engine.myName}' for update.");
@@ -166,16 +182,6 @@ namespace BulkEngineUpdateMod.Patches
             TaskEngineCompletePatch.AddEnginesToQueue(enginesToUpdate);
             TaskEngineCompletePatch.StartNextUpdateTask(guiMain, rS);
             guiMain.MessageBox("All engine updates have been successfully queued!", false);
-        }
-
-        private static void checkEngineInformations(engineScript engine)
-        {
-            Debug.LogWarning($"{engine.ownerID}");
-            Debug.LogWarning($"{engine.features}");
-            Debug.LogWarning($"{engine.featuresInDev}");
-            Debug.LogWarning($"{engine.spezialgenre}");
-            Debug.LogWarning($"{engine.spezialplatform}");
-            Debug.LogWarning($"{engine.updating}");
         }
         
         private static void AssignNewFeatures(engineScript engine, engineFeatures eF)
@@ -275,6 +281,30 @@ namespace BulkEngineUpdateMod.Patches
 
             Debug.Log($"Processed name: '{baseName}' (original: '{engineName}')");
             return baseName;
+        }
+        
+        public static bool ValidateAndSetConfig()
+        {
+            var priceConfig = ModConfig.EnginePrice.Value;
+            var profitConfig = ModConfig.EngineProfitShare.Value;
+
+            if (priceConfig < 1 || priceConfig > 100000)
+            {
+                Debug.LogError("EnginePrice est hors des limites autorisées (1 à 100,000). Veuillez corriger la configuration.");
+                return false;
+            }
+
+            if (profitConfig < 1 || profitConfig > 50)
+            {
+                Debug.LogError("EngineProfitShare est hors des limites autorisées (1 à 50). Veuillez corriger la configuration.");
+                return false;
+            }
+            
+            _enginePrice = priceConfig;
+            _engineProfitShare = profitConfig;
+
+            Debug.Log($"Configuration validée : EnginePrice={_enginePrice}, EngineProfitShare={_engineProfitShare}");
+            return true;
         }
     }
 }
