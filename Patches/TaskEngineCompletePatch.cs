@@ -1,6 +1,8 @@
 ﻿using System;
 using HarmonyLib;
+using System.Linq;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace BulkEngineUpdateMod.Patches
@@ -77,7 +79,7 @@ namespace BulkEngineUpdateMod.Patches
         // Mise à jour du nom du moteur après la tâche
         private static void UpdateEngineName(engineScript engine)
         {
-            string baseName = engine.myName.Split(' ')[0]; // Conserver le nom de base
+            var baseName = GetBaseNameWithoutVersion(engine.myName);
             string newVersion = engine.GetVersionString();
             engine.myName = $"{baseName} {newVersion}";
 
@@ -154,6 +156,27 @@ namespace BulkEngineUpdateMod.Patches
 
             Debug.LogError($"No room found for task ID {taskID}.");
             return null;
+        }
+        
+        public static string GetBaseNameWithoutVersion(string engineName)
+        {
+            if (string.IsNullOrWhiteSpace(engineName))
+            {
+                Debug.LogWarning("Engine name is empty or null.");
+                return string.Empty;
+            }
+            
+            var versionRegex = new Regex(@"^\d+\.\d+$");
+            
+            var filteredParts = engineName
+                .Split(' ') // Diviser le nom par espaces
+                .Where(part => !versionRegex.IsMatch(part))
+                .ToArray();
+            
+            string baseName = string.Join(" ", filteredParts);
+
+            Debug.Log($"Processed name: '{baseName}' (original: '{engineName}')");
+            return baseName;
         }
     }
 }

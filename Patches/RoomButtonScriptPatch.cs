@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Linq;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 namespace BulkEngineUpdateMod.Patches
 {
@@ -206,8 +207,9 @@ namespace BulkEngineUpdateMod.Patches
                 Debug.LogError("Engine name is null or empty. Skipping version update.");
                 return;
             }
-
-            string baseName = engine.myName.Split(' ')[0]; // Conserver la base du nom
+            
+            var baseName = GetBaseNameWithoutVersion(engine.myName);
+                
             string newVersion = engine.GetVersionString();
 
             if (string.IsNullOrEmpty(newVersion))
@@ -252,6 +254,27 @@ namespace BulkEngineUpdateMod.Patches
             engine.updating = true;
 
             Debug.Log($"Configured development points for engine '{engine.myName}'. Total points: {engine.devPoints}.");
+        }
+        
+        public static string GetBaseNameWithoutVersion(string engineName)
+        {
+            if (string.IsNullOrWhiteSpace(engineName))
+            {
+                Debug.LogWarning("Engine name is empty or null.");
+                return string.Empty;
+            }
+            
+            var versionRegex = new Regex(@"^\d+\.\d+$");
+            
+            var filteredParts = engineName
+                .Split(' ') // Diviser le nom par espaces
+                .Where(part => !versionRegex.IsMatch(part))
+                .ToArray();
+            
+            string baseName = string.Join(" ", filteredParts);
+
+            Debug.Log($"Processed name: '{baseName}' (original: '{engineName}')");
+            return baseName;
         }
     }
 }

@@ -5,6 +5,7 @@ namespace BulkEngineUpdateMod.Config
     public static class ModConfig
     {
         public static ConfigEntry<bool> EnableFeature;
+        public static ConfigEntry<bool> Logs;
 
         public static void Init(ConfigFile config)
         {
@@ -12,7 +13,7 @@ namespace BulkEngineUpdateMod.Config
                 "General",
                 "EnableFeature",
                 true,
-                "Activer ou désactiver le mod."
+                "Enable or disable mod."
             );
         }
     }
