@@ -122,7 +122,8 @@ namespace BulkEngineUpdateMod.Patches
             Debug.Log("Processing engines for update.");
 
             mainScript mainScriptInstance = AccessTools.FieldRefAccess<GUI_Main, mainScript>(guiMain, "mS_");
-            engineFeatures engineFeaturesInstance = AccessTools.FieldRefAccess<mainScript, engineFeatures>(mainScriptInstance, "eF_");
+            engineFeatures engineFeaturesInstance =
+                AccessTools.FieldRefAccess<mainScript, engineFeatures>(mainScriptInstance, "eF_");
 
             engineScript[] allEngines = Object.FindObjectsOfType<engineScript>();
             var playerEngines = allEngines.Where(engine => engine.ownerID == mainScriptInstance.myID).ToList();
@@ -135,55 +136,99 @@ namespace BulkEngineUpdateMod.Patches
             }
 
             var enginesToUpdate = new List<engineScript>();
+            var maxTechLevel = 0;
+            var maxTechPlatformId = 0;
+            var engineTechLevel = 0;
 
-            foreach (var engine in playerEngines) {
-                
-                if (engine.features.Zip(engineFeaturesInstance.engineFeatures_UNLOCK, (engineFeature, unlockFeature) => engineFeature == unlockFeature).All(x => x))
+            foreach (var engine in playerEngines)
+            {
+                // Vérification si toutes les fonctionnalités sont déjà débloquées
+                if (engine.features.Zip(engineFeaturesInstance.engineFeatures_UNLOCK,
+                        (engineFeature, unlockFeature) => engineFeature == unlockFeature).All(x => x))
                 {
                     Debug.Log($"Engine '{engine.myName}' already has all features unlocked. Skipping.");
                     continue;
                 }
-                
-                if (engine.features == null || engine.featuresInDev == null)
+
+                // Validation des données du moteur
+                if (engine.features == null || !engine.features.Any() || engine.featuresInDev == null ||
+                    !engine.featuresInDev.Any())
                 {
-                    Debug.LogError($"Engine '{engine.myName}' has invalid feature data. Skipping.");
+                    Debug.LogError($"Engine '{engine.myName}' has invalid or empty feature data. Skipping.");
                     continue;
                 }
 
+                engineTechLevel = Mathf.Max(engineTechLevel, engine.GetTechLevel());
+                
+                Debug.Log($"Engine {engine.myName} has {engine.GetTechLevel()} tech level.");
+                
+                var spezialPlatformScript = engine.GetSpezialPlatformScript();
+                
+                if (spezialPlatformScript != null && spezialPlatformScript.tech >= maxTechLevel)
+                {
+                    maxTechLevel = spezialPlatformScript.tech;
+                    maxTechPlatformId = spezialPlatformScript.myID;
+                    Debug.Log($"Engine platform {spezialPlatformScript.myName} has {spezialPlatformScript.tech} tech level.");
+                }
+                
                 AssignNewFeatures(engine, engineFeaturesInstance);
                 SetNewVersionName(engine);
                 ConfigureDevelopmentPoints(engine, engineFeaturesInstance);
-
+                
                 if (engine.sellEngine)
                 {
-                    if (_enginePrice > 0)
+                    if (_enginePrice > 0 &&
+                        _enginePrice <= 100000)
                     {
                         engine.preis = _enginePrice;
                     }
 
-                    if (_engineProfitShare > 0)
+                    if (_engineProfitShare > 0 &&
+                        _engineProfitShare <= 50)
                     {
                         engine.gewinnbeteiligung = _engineProfitShare;
                     }
                 }
                 
-                enginesToUpdate.Add(engine);
-
                 Debug.Log($"Prepared engine '{engine.myName}' for update.");
+                enginesToUpdate.Add(engine);
             }
-
-            if (enginesToUpdate.Count == 0)
+            
+            if (enginesToUpdate.Count > 0 && maxTechLevel > 0 && maxTechPlatformId != 0)
             {
+                foreach (var engine in enginesToUpdate)
+                {
+                    engine.spezialplatform = maxTechPlatformId;
+                }
+
+                if (enginesToUpdate.Count == 0)
+                {
+                    Debug.LogWarning("No engines to update!");
+                    guiMain.MessageBox("No engines available for update.", false);
+                    return;
+                }
+
+                // Ajout et démarrage des tâches
+                TaskEngineCompletePatch.AddEnginesToQueue(enginesToUpdate);
+                TaskEngineCompletePatch.StartNextUpdateTask(guiMain, rS);
+                guiMain.MessageBox("All engine updates have been successfully queued!", false);
+            } else if (enginesToUpdate.Count > 0) {
                 Debug.LogWarning("No engines to update!");
                 guiMain.MessageBox("No engines available for update.", false);
                 return;
             }
-
-            TaskEngineCompletePatch.AddEnginesToQueue(enginesToUpdate);
-            TaskEngineCompletePatch.StartNextUpdateTask(guiMain, rS);
-            guiMain.MessageBox("All engine updates have been successfully queued!", false);
+            else
+            {
+                Debug.LogWarning($"techLevl : {maxTechLevel}");
+                Debug.LogWarning($"Tech platform : {maxTechPlatformId}");
+                Debug.LogWarning($"Technology : {engineTechLevel}");
+                guiMain.MessageBox(
+                    "TechLevel is too low! Please update manually at least one engine with a higher tech level.",
+                    false);
+                return;
+            }
         }
-        
+
         private static void AssignNewFeatures(engineScript engine, engineFeatures eF)
         {
             if (engine.features.Length != eF.engineFeatures_UNLOCK.Length ||
